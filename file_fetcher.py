@@ -25,7 +25,7 @@ class FileFetcher:
     # Get the download links to files
     #   int pageMax - max of pages to get links
     #   collections - list of collections to search
-    def get_download_links(self, collections, page_max=-1):
+    def get_download_links(self, collections, page_init=1, page_max=-1):
 
         # Do the first request
         first_page = self._get_page(collections, 1)
@@ -45,7 +45,7 @@ class FileFetcher:
         print('Registries: {}'.format(len(links)))
         print('-'*30)
 
-        for i in range(2,page_max + 1):
+        for i in range(page_init,page_max + 1):
             # Get page
             page = self._get_page(collections, i)
             page_info = self._get_page_info(page)
@@ -57,6 +57,10 @@ class FileFetcher:
 
             print('Actual: {}'.format(len(links)))
             print('-'*30)
+
+            with open('links/links{}.txt'.format(i), 'w') as the_file:
+                for link in new_links:
+                    the_file.write(link + '\n')
 
         return links
 
