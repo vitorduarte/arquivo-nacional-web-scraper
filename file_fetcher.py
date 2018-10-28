@@ -1,5 +1,7 @@
 import urllib
 import requests
+import ast
+import time
 
 from bs4 import BeautifulSoup
 
@@ -16,7 +18,23 @@ class FileFetcher:
 
         data = [('input_pesqfundocolecao', collection) for collection in collections]
 
-        r = requests.post(url, cookies=self.cookies, data=data)
+        r = None
+        while r is None:
+            try:
+                r = requests.post(url, cookies=self.cookies, data=data)
+                try:
+                    parsed_r = BeautifulSoup(r.content, 'html.parser')
+                    self._get_page_info(parsed_r)
+                except:
+                    cookies_string = input('Invalid cookies, type the cookie here: ')
+                    cookies = cookies_string.replace("'", "\"")
+                    self.cookies = ast.literal_eval(cookies)
+                    r = None
+
+            except requests.exceptions.RequestException as e:
+                print(e)
+                time.sleep(5)
+
         parsed_r = BeautifulSoup(r.content, 'html.parser')
 
         return parsed_r
@@ -37,13 +55,8 @@ class FileFetcher:
         print("Total of registries: {}".format(page_info['registries_total']))
         print("Page max: {}".format(page_max))
 
-        self._print_page_info(page_info)
-
         # Get the urls
-        data = first_page.findAll('a', class_='help_pesquisa', title="Fazer download do arquivo")
-        links = [self._get_url(file) for file in data]
-        print('Registries: {}'.format(len(links)))
-        print('-'*30)
+        links = []
 
         for i in range(page_init,page_max + 1):
             # Get page
