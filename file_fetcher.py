@@ -55,8 +55,8 @@ class FileFetcher:
         return links
 
     def download_links(self, links, folder):
-
-        for link in links:
+        total = len(links)
+        for idx, link in enumerate(links):
             # Get queries
             url_parsed = urllib.request.urlparse(link)
             url_queries = dict(urllib.parse.parse_qsl(url_parsed.query))
@@ -73,10 +73,11 @@ class FileFetcher:
                 try:
                     path_file = os.path.join(folder, collection_folder, filename)
                     urllib.request.urlretrieve(link, path_file)
-                    print('Downloaded')
-                    print('-'*40,)
+                    print(idx + 1, "/", total)
+                    print('-'*40)
                     print('Filename: {}'.format(filename))
-                    print('Folder: {}\n'.format(collection_folder))
+                    print('Folder: {}'.format(collection_folder))
+                    print('-'*40, "\n")
                     download = True
                 except:
                     print('Não foi possível realizar o download, tentando novamente...\n')
