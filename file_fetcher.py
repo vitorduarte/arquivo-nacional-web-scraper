@@ -73,7 +73,10 @@ class FileFetcher:
                 try:
                     path_file = os.path.join(folder, collection_folder, filename)
                     urllib.request.urlretrieve(link, path_file)
-                    print('Downloaded file: {}\n'.format(filename))
+                    print('Downloaded')
+                    print('-'*40,)
+                    print('Filename: {}'.format(filename))
+                    print('Folder: {}\n'.format(collection_folder))
                     download = True
                 except:
                     print('Não foi possível realizar o download, tentando novamente...\n')
