@@ -2,6 +2,8 @@ import urllib
 import requests
 import ast
 import time
+import json
+import os
 
 from bs4 import BeautifulSoup
 
@@ -11,34 +13,9 @@ class FileFetcher:
     def __init__(self, cookies):
         self.cookies = cookies
 
-    def _get_page(self, collections, page_total):
-        base_url = 'http://sian.an.gov.br/sianex/Consulta/resultado_pesquisa_pdf.asp'
-        params = urllib.parse.urlencode({'Pages': page_total})
-        url = base_url + '?' + params
-
-        data = [('input_pesqfundocolecao', collection) for collection in collections]
-
-        r = None
-        while r is None:
-            try:
-                r = requests.post(url, cookies=self.cookies, data=data)
-                try:
-                    parsed_r = BeautifulSoup(r.content, 'html.parser')
-                    self._get_page_info(parsed_r)
-                except:
-                    cookies_string = input('Invalid cookies, type the cookie here: ')
-                    cookies = cookies_string.replace("'", "\"")
-                    self.cookies = ast.literal_eval(cookies)
-                    r = None
-
-            except requests.exceptions.RequestException as e:
-                print(e)
-                time.sleep(5)
-
-        parsed_r = BeautifulSoup(r.content, 'html.parser')
-
-        return parsed_r
-
+        with open('fundos/nome_fundos.json') as nome_fundos:
+            nome_fundos = json.load(nome_fundos)
+        self.nome_fundos = nome_fundos
 
     # Get the download links to files
     #   int pageMax - max of pages to get links
@@ -77,7 +54,59 @@ class FileFetcher:
 
         return links
 
-        # return response
+    def download_links(self, links, folder):
+
+        for link in links:
+            # Get queries
+            url_parsed = urllib.request.urlparse(link)
+            url_queries = dict(urllib.parse.parse_qsl(url_parsed.query))
+
+            # Get file details
+            filename = url_queries['NomeArquivo']
+            filename_splited = filename.split('_')
+            collection = '_'.join(filename_splited[0:3])
+            collection_folder = self.nome_fundos[collection]
+
+
+            download = False
+            while not download:
+                try:
+                    path_file = os.path.join(folder, collection_folder, filename)
+                    urllib.request.urlretrieve(link, path_file)
+                    print('Downloaded file: {}\n'.format(filename))
+                    download = True
+                except:
+                    print('Não foi possível realizar o download, tentando novamente...\n')
+
+
+    def _get_page(self, collections, page_total):
+        base_url = 'http://sian.an.gov.br/sianex/Consulta/resultado_pesquisa_pdf.asp'
+        params = urllib.parse.urlencode({'Pages': page_total})
+        url = base_url + '?' + params
+
+        data = [('input_pesqfundocolecao', collection) for collection in collections]
+
+        r = None
+        while r is None:
+            try:
+                r = requests.post(url, cookies=self.cookies, data=data)
+                try:
+                    parsed_r = BeautifulSoup(r.content, 'html.parser')
+                    self._get_page_info(parsed_r)
+                except:
+                    cookies_string = input('Invalid cookies, type the cookie here: ')
+                    cookies = cookies_string.replace("'", "\"")
+                    self.cookies = ast.literal_eval(cookies)
+                    r = None
+
+            except requests.exceptions.RequestException as e:
+                print(e)
+                time.sleep(5)
+
+        parsed_r = BeautifulSoup(r.content, 'html.parser')
+
+        return parsed_r
+
 
     # Return the url of an help_pesquisa response
     def _get_url(self, file):
