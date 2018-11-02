@@ -2,7 +2,11 @@ import file_fetcher as ffch
 
 cookies = {}
 
-file_fetcher = ffch.FileFetcher(cookies)
-links = [line.rstrip('\n') for line in open('links-1-5890.txt', 'r')]
+collection = ffch.Collection('BR_RJANRIO_CNV')
+file_fetcher = ffch.FileFetcher(collection, cookies)
 
-file_fetcher.download_links(links[0:10], './downloads')
+page_init = 1
+page_end = 118
+
+links = [line.rstrip('\n') for line in open('links/{}/{}-{}.txt'.format(collection.name, page_init, page_end), 'r')]
+file_fetcher.download_links(links, './downloads')

@@ -4,96 +4,110 @@ import ast
 import time
 import json
 import os
+import logging
+
+import Colorer
 
 from bs4 import BeautifulSoup
+
+
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
+                    datefmt='%d-%m %H:%M')
+
+module_logger = logging.getLogger('Arquivo Nacional')
+
+class Collection:
+    def __init__(self, namespace):
+        self.namespace = namespace
+        self._get_name(self.namespace)
+
+    def _get_name(self, namespace):
+        with open('fundos/nome_fundos.json') as file:
+            name_collections = json.load(file)
+        try:
+            name_collection = name_collections[namespace]
+            self.name = name_collection
+        except:
+            print('Invalid collection name')
+            exit(1)
+
 
 class FileFetcher:
     # Ideally, the cookies will be taken using user credentials but
     # it is not working. I just take the cookies from browser and send here
-    def __init__(self, cookies):
+    def __init__(self, collection, cookies={}):
         self.cookies = cookies
+        self.logger = module_logger
+        self.collection = collection
 
-        with open('fundos/nome_fundos.json') as nome_fundos:
-            nome_fundos = json.load(nome_fundos)
-        self.nome_fundos = nome_fundos
+        self._add_file_handler()
+        self._get_collection_info()
+
+    # Add an file handler to store the log
+    def _add_file_handler(self):
+        formatter = logging.Formatter('%(asctime)s - %(name)-12s - %(levelname)-8s - %(message)s')
+
+        fh = logging.FileHandler('temp/{}.log'.format(self.collection.namespace))
+        fh.setFormatter(formatter)
+        self.logger.addHandler(fh)
+
+    # Get information about a collection
+    def _get_collection_info(self):
+        first_page = self._get_page(1)
+        collection_info = self._get_page_info(first_page)
+
+        self.collection.num_pages = collection_info['page_total']
+        self.collection.num_registries = collection_info['registries_total']
+        self.logger.info('\n{}\n\tPages: {}\n\tRegistries: {}\n'.format(self.collection.name,
+                                                                        self.collection.num_pages,
+                                                                        self.collection.num_registries))
 
     # Get the download links to files
-    #   int pageMax - max of pages to get links
-    #   collections - list of collections to search
-    def get_download_links(self, collections, page_init=1, page_max=-1):
+    def get_download_links(self, page_init=1, page_end=-1):
 
-        # Do the first request
-        first_page = self._get_page(collections, 1)
-        page_info = self._get_page_info(first_page)
-        if page_max == -1 or page_max > page_info['page_total']:
-            page_max = page_info['page_total']
+        # Check page_init and page_end
+        if page_end == -1 or page_end > self.collection.num_pages:
+            page_end = self.collection.num_pages
 
-        print('-'*30)
-        print("Total of registries: {}".format(page_info['registries_total']))
-        print("Page max: {}".format(page_max))
+        if page_init > self.collection.num_pages:
+            self.logger.error('Invalid value of initial page')
 
         # Get the urls
         links = []
 
-        for i in range(page_init,page_max + 1):
+        for i in range(page_init,page_end + 1):
             # Get page
-            page = self._get_page(collections, i)
-            page_info = self._get_page_info(page)
-            self._print_page_info(page_info)
+            page = self._get_page(i)
 
-            data = first_page.findAll('a', class_='help_pesquisa', title="Fazer download do arquivo")
-            new_links = [self._get_url(file) for file in data]
+            # Get links
+            new_links = self._get_links(page)
             links = links + new_links
 
-            print('Actual: {}'.format(len(links)))
-            print('-'*30)
+            self.logger.info('\nPage: {}/{} \nFetched Links: {}'.format(i,
+                                                                        self.collection.num_pages,
+                                                                        len(links)))
 
-            with open('links/links{}.txt'.format(i), 'w') as the_file:
+            # Save links of this page
+            with open('links/{}/page{}.txt'.format(self.collection.name, i), 'w') as file:
                 for link in new_links:
-                    the_file.write(link + '\n')
+                    file.write(link + '\n')
 
-        return links
+        # Save all links
+        with open('links/{}/{}-{}.txt'.format(self.collection.name, page_init, page_end), 'w') as file:
+                for link in links:
+                    file.write(link + '\n')
 
-    def download_links(self, links, folder):
-        total = len(links)
-        for idx, link in enumerate(links):
-            # Get queries
-            url_parsed = urllib.request.urlparse(link)
-            url_queries = dict(urllib.parse.parse_qsl(url_parsed.query))
-
-            # Get file details
-            filename = url_queries['NomeArquivo']
-            filename_splited = filename.split('_')
-            collection = '_'.join(filename_splited[0:3])
-            collection_folder = self.nome_fundos[collection]
-
-
-            download = False
-            while not download:
-                try:
-                    path_file = os.path.join(folder, collection_folder, filename)
-                    urllib.request.urlretrieve(link, path_file)
-                    print(idx + 1, "/", total)
-                    print('-'*40)
-                    print('Filename: {}'.format(filename))
-                    print('Folder: {}'.format(collection_folder))
-                    print('-'*40, "\n")
-                    download = True
-                except:
-                    print('Não foi possível realizar o download, tentando novamente...\n')
-
-
-    def _get_page(self, collections, page_total):
+    # Open an page using pagination and return this data
+    def _get_page(self, page_num):
         base_url = 'http://sian.an.gov.br/sianex/Consulta/resultado_pesquisa_pdf.asp'
-        params = urllib.parse.urlencode({'Pages': page_total})
+        params = urllib.parse.urlencode({'Pages': page_num, 'input_pesqfundocolecao':self.collection.namespace })
         url = base_url + '?' + params
-
-        data = [('input_pesqfundocolecao', collection) for collection in collections]
 
         r = None
         while r is None:
             try:
-                r = requests.post(url, cookies=self.cookies, data=data)
+                r = requests.post(url, cookies=self.cookies)
                 try:
                     parsed_r = BeautifulSoup(r.content, 'html.parser')
                     self._get_page_info(parsed_r)
@@ -111,6 +125,11 @@ class FileFetcher:
 
         return parsed_r
 
+    # Get links from an page
+    def _get_links(self, page):
+        data = page.findAll('a', class_='help_pesquisa', title="Fazer download do arquivo")
+        new_links = [self._get_url(file) for file in data]
+        return new_links
 
     # Return the url of an help_pesquisa response
     def _get_url(self, file):
@@ -141,7 +160,7 @@ class FileFetcher:
         url = base_url + '?' + params
         return url
 
-
+    # Return information about a page
     def _get_page_info(self, page):
         script = page.findAll('script', type='text/javascript')[-1].text
         script = script.replace('var ', '')
@@ -161,6 +180,27 @@ class FileFetcher:
             "page": page,
         }
 
-    def _print_page_info(self, page_info):
-        print('-'*30)
-        print("Page: {}/{}\n".format(page_info['page'], page_info['page_total']))
+    # Download links in a folder
+    def download_links(self, links, folder):
+        total = len(links)
+
+        for idx, link in enumerate(links):
+            # Get queries
+            url_parsed = urllib.request.urlparse(link)
+            url_queries = dict(urllib.parse.parse_qsl(url_parsed.query))
+
+            # Get file details
+            filename = url_queries['NomeArquivo']
+            collection_folder = self.collection.name
+
+            download = False
+            while not download:
+                try:
+                    path_file = os.path.join(folder, collection_folder, filename)
+                    urllib.request.urlretrieve(link, path_file)
+                    self.logger.info('\nFile: {}/{} \n\tFilename: {}'.format(idx,
+                                                                               total,
+                                                                               filename))
+                    download = True
+                except Exception as e:
+                    self.logger.error('\nNão foi possível realizar o download, tentando novamente...\n{}'.format(e))

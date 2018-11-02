@@ -1,16 +1,6 @@
 import file_fetcher as ffch
+all_collections = [line.rstrip('\n') for line in open('collections.txt')]
 
-
-cookies = {
-    'INSERT HERE THE TOKEN FIELDS'
-}
-
-
-file_fetcher = ffch.FileFetcher(cookies)
-collections = [line.rstrip('\n') for line in open('collections.txt')]
-
-response = file_fetcher.get_download_links(['1'])
-
-with open('all_links.txt', 'w') as the_file:
-        for item in response:
-            the_file.write(item + '\n')
+collection = ffch.Collection('BR_RJANRIO_CNV')
+file_fetcher = ffch.FileFetcher(collection, cookies)
+file_fetcher.get_download_links(page_init=1, page_end=2)
