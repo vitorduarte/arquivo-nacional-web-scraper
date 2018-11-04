@@ -197,10 +197,20 @@ class FileFetcher:
             while not download:
                 try:
                     path_file = os.path.join(folder, collection_folder, filename)
-                    urllib.request.urlretrieve(link, path_file)
+                    r = requests.get(link, timeout=5)
+
+                    with open(path_file, 'wb') as file:
+                        file.write(r.content)
+
                     self.logger.info('\nFile: {}/{} \n\tFilename: {}'.format(idx,
                                                                                total,
                                                                                filename))
                     download = True
                 except Exception as e:
-                    self.logger.error('\nNão foi possível realizar o download, tentando novamente...\n{}'.format(e))
+                    self.logger.error('\nNão foi possível realizar o download do arquivo {}.\n{}'.format(filename, e))
+                    try_again = input('Deseja tentar novamente?(Y/n): ')
+
+                    if try_again.lower() == 'n':
+                        with open('.'.join(path_file.split('.')[:-1]) + '_.' + path_file.split('.')[-1], 'w') as file:
+                            file.write('timeout error')
+                            download = True
