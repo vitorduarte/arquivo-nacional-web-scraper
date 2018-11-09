@@ -181,7 +181,7 @@ class FileFetcher:
         }
 
     # Download links in a folder
-    def download_links(self, links, folder):
+    def download_links(self, links, folder, max_retry=2):
         total = len(links)
 
         for idx, link in enumerate(links):
@@ -192,11 +192,16 @@ class FileFetcher:
             # Get file details
             filename = url_queries['NomeArquivo']
             collection_folder = self.collection.name
+            path_file = os.path.join(folder, collection_folder, filename)
 
             download = False
+            retry_count = 0
             while not download:
+                if retry_count >= max_retry:
+                    with open('.'.join(path_file.split('.')[:-1]) + '_.' + path_file.split('.')[-1], 'w') as file:
+                        file.write('timeout error')
+                        download = True
                 try:
-                    path_file = os.path.join(folder, collection_folder, filename)
                     r = requests.get(link, timeout=5)
 
                     with open(path_file, 'wb') as file:
@@ -207,10 +212,5 @@ class FileFetcher:
                                                                                filename))
                     download = True
                 except Exception as e:
-                    self.logger.error('\nNão foi possível realizar o download do arquivo {}.\n{}'.format(filename, e))
-                    try_again = input('Deseja tentar novamente?(Y/n): ')
-
-                    if try_again.lower() == 'n':
-                        with open('.'.join(path_file.split('.')[:-1]) + '_.' + path_file.split('.')[-1], 'w') as file:
-                            file.write('timeout error')
-                            download = True
+                    retry_count += 1
+                    self.logger.error('\nNão foi possível realizar o download do arquivo {}. Tentando novamente\n{}'.format(filename, e))
