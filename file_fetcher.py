@@ -5,17 +5,20 @@ import time
 import json
 import os
 import logging
+import queue
+import threading
+import time
 
 import Colorer
 
 from bs4 import BeautifulSoup
 
 
+
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
                     datefmt='%d-%m %H:%M')
 
-module_logger = logging.getLogger('Arquivo Nacional')
 
 class Collection:
     def __init__(self, namespace):
@@ -38,7 +41,8 @@ class FileFetcher:
     # it is not working. I just take the cookies from browser and send here
     def __init__(self, collection, cookies={}):
         self.cookies = cookies
-        self.logger = module_logger
+        self.logger = logging.getLogger(collection.namespace)
+        self.logger_error = logging.getLogger(collection.namespace + "_ERROR")
         self.collection = collection
 
         self._add_file_handler()
@@ -48,9 +52,14 @@ class FileFetcher:
     def _add_file_handler(self):
         formatter = logging.Formatter('%(asctime)s - %(name)-12s - %(levelname)-8s - %(message)s')
 
-        fh = logging.FileHandler('temp/{}.log'.format(self.collection.namespace))
-        fh.setFormatter(formatter)
-        self.logger.addHandler(fh)
+        log_fh = logging.FileHandler('temp/{}.log'.format(self.collection.namespace))
+        err_fh = logging.FileHandler('temp/{}.log'.format(self.collection.namespace + "_ERROR"))
+
+        log_fh.setFormatter(formatter)
+        err_fh.setFormatter(formatter)
+
+        self.logger.addHandler(log_fh)
+        self.logger_error.addHandler(err_fh)
 
     # Get information about a collection
     def _get_collection_info(self):
@@ -180,37 +189,59 @@ class FileFetcher:
             "page": page,
         }
 
+    # Download a single file
+    # Returns True if download is sucessful
+    def download_file(self, link, folder, max_retry=2):
+        # Get link info
+        url_parsed = urllib.request.urlparse(link)
+        url_queries = dict(urllib.parse.parse_qsl(url_parsed.query))
+
+        # Get file details
+        filename = url_queries['NomeArquivo']
+        collection_folder = self.collection.name
+        path_file = os.path.join(folder, collection_folder, filename)
+
+        retry_count = 0
+        while True:
+            if retry_count >= max_retry:
+                with open('.'.join(path_file.split('.')[:-1]) + '_.' + path_file.split('.')[-1], 'w') as file:
+                    file.write('timeout error')
+                return False, filename
+            try:
+                r = requests.get(link, timeout=5)
+                with open(path_file, 'wb') as file:
+                    file.write(r.content)
+                return True, filename
+            except Exception as e:
+                retry_count += 1
+                self.logger.error('\nNão foi possível realizar o download do arquivo {}. Tentando novamente\n{}'.format(filename, e))
+                continue
+
+    def download_queue(self, q, folder, max_retry):
+        while not q.empty():
+            link = q.get()
+            sucess, filename = self.download_file(link, folder, max_retry)
+            if sucess:
+                self.logger.info('\nQueue size: {}\n\tFilename: {}'.format(q.qsize(), filename))
+            else:
+                self.logger_error.info('\nQueue size: {}\n\tFilename: {}'.format(q.qsize(), filename))
+            q.task_done()
+
+
+
     # Download links in a folder
-    def download_links(self, links, folder, max_retry=2):
-        total = len(links)
+    def download_links(self, links, folder, max_retry=2, max_simultaneus=5):
+        started = time.time()
+        q = queue.Queue()
+        threads = []
 
-        for idx, link in enumerate(links):
-            # Get queries
-            url_parsed = urllib.request.urlparse(link)
-            url_queries = dict(urllib.parse.parse_qsl(url_parsed.query))
+        for link in links:
+            q.put(link)
 
-            # Get file details
-            filename = url_queries['NomeArquivo']
-            collection_folder = self.collection.name
-            path_file = os.path.join(folder, collection_folder, filename)
+        for _ in range(max_simultaneus) :
+            t = threading.Thread(target=self.download_queue, args=(q, folder, max_retry))
+            t.start()
+            threads.append(t)
 
-            download = False
-            retry_count = 0
-            while not download:
-                if retry_count >= max_retry:
-                    with open('.'.join(path_file.split('.')[:-1]) + '_.' + path_file.split('.')[-1], 'w') as file:
-                        file.write('timeout error')
-                        download = True
-                try:
-                    r = requests.get(link, timeout=5)
-
-                    with open(path_file, 'wb') as file:
-                        file.write(r.content)
-
-                    self.logger.info('\nFile: {}/{} \n\tFilename: {}'.format(idx,
-                                                                               total,
-                                                                               filename))
-                    download = True
-                except Exception as e:
-                    retry_count += 1
-                    self.logger.error('\nNão foi possível realizar o download do arquivo {}. Tentando novamente\n{}'.format(filename, e))
+        q.join()
+        print("Elapsed time: ", time.time()-started)
