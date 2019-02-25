@@ -68,6 +68,8 @@ class FileFetcher:
 
         self.collection.num_pages = collection_info['page_total']
         self.collection.num_registries = collection_info['registries_total']
+        self.collection.title = collection_info['title']
+        self.logger.info('\n TITLE: {}'.format(self.collection.title))
         self.logger.info('\n{}\n\tPages: {}\n\tRegistries: {}\n'.format(self.collection.name,
                                                                         self.collection.num_pages,
                                                                         self.collection.num_registries))
@@ -107,6 +109,53 @@ class FileFetcher:
                 for link in links:
                     file.write(link + '\n')
 
+
+     # Get the download links to files
+    def get_download_data(self, page_init=1, page_end=-1):
+
+        # Check page_init and page_end
+        if page_end == -1 or page_end > self.collection.num_pages:
+            page_end = self.collection.num_pages
+
+        if page_init > self.collection.num_pages:
+            self.logger.error('Invalid value of initial page')
+
+        # Get the urls
+        # infos = []
+
+        total_size = 0
+        for i in range(page_init,page_end + 1):
+
+            # Get page
+            page = self._get_page(i)
+
+            # Get download info
+            new_data = self._get_download_data(page)
+            # print(new_data)
+            # infos = infos + new_data
+
+            # Save links of this page
+            page_size=0
+            with open('data/{}/{}-{}.txt'.format(self.collection.name,  page_init, page_end), 'a') as file:
+                for info in new_data:
+                    info = info[1].replace('MB', '')
+                    info = info.replace(',', '.')
+                    file_size = float(info)
+                    page_size += file_size
+                total_size += page_size
+                file.write(str(page_size) + '\n')
+
+            self.logger.info('\nPage: {}/{} \nFetched Links: {} \nSize: {}'.format(i,
+                                                                                    self.collection.num_pages,
+                                                                                    len(new_data),
+                                                                                    page_size))
+            self.logger.info('\nTOTAL SIZE: ' + str(total_size))
+
+        # Save final size
+        with open('data/{}/_{}-{}_TOTAL.txt'.format(self.collection.name, page_init, page_end), 'w') as file:
+            file.write(str(total_size/1000) + ' GB\n')
+
+
     # Open an page using pagination and return this data
     def _get_page(self, page_num):
         base_url = 'http://sian.an.gov.br/sianex/Consulta/resultado_pesquisa_pdf.asp'
@@ -139,6 +188,23 @@ class FileFetcher:
         data = page.findAll('a', class_='help_pesquisa', title="Fazer download do arquivo")
         new_links = [self._get_url(file) for file in data]
         return new_links
+
+    # Get name and size of files
+    def _get_download_data(self, page):
+        result = page.find('ul', id='resultado')
+        data_list = result.findAll('li')
+        data_list = [self._treat_download_data(data) for data in data_list]
+        return data_list
+
+    # Treat download data to split the name and size of file
+    def _treat_download_data(self, data):
+        text = data.text
+        text = text.replace(' ', '')
+        text = text.replace('\n', '')
+        text_split = text.split('-')
+        return text_split[0], text_split[-1]
+
+
 
     # Return the url of an help_pesquisa response
     def _get_url(self, file):
@@ -177,16 +243,20 @@ class FileFetcher:
         script = script.replace(' ', '')
         script = script.split(';')
 
+        title = page.find('h3').text
+
         registries_total = int(script[0].split('=')[-1])
         page_registries = int(script[1].split('=')[-1])
         page_total = int(script[2].split('=')[-1])
         page = int(script[3].split('=')[-1])
+
 
         return {
             "registries_total": registries_total,
             "page_registries": page_registries,
             "page_total": page_total,
             "page": page,
+            "title": title,
         }
 
     # Download a single file
