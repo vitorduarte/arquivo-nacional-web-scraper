@@ -139,6 +139,7 @@ class FileFetcher:
             with open('data/{}/{}-{}.txt'.format(self.collection.name,  page_init, page_end), 'a') as file:
                 for info in new_data:
                     info = info[1].replace('MB', '')
+                    info = info.replace('.', '')
                     info = info.replace(',', '.')
                     file_size = float(info)
                     page_size += file_size
